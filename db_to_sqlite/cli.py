@@ -103,6 +103,17 @@ def cli(
                     for fk in fks
                 ]
             )
+
+            # Construct a dictionary of column names and types.
+            # Execute schema-related queries before retrieving the rows.
+            create_columns = {}
+            for column in inspector.get_columns(table):
+                try:
+                    column_type = column["type"].python_type
+                except NotImplementedError:
+                    column_type = str
+                create_columns[column["name"]] = column_type
+
             count = None
             table_quoted = db_conn.dialect.identifier_preparer.quote_identifier(table)
             if progress:
@@ -118,21 +129,14 @@ def cli(
             except StopIteration:
                 # This is an empty table - create an empty copy
                 if not db[table].exists():
-                    create_columns = {}
-                    for column in inspector.get_columns(table):
-                        try:
-                            column_type = column["type"].python_type
-                        except NotImplementedError:
-                            column_type = str
-                        create_columns[column["name"]] = column_type
                     db[table].create(create_columns, pks)
             else:
                 rows = itertools.chain([first], rows)
                 if progress:
                     with click.progressbar(rows, length=count) as bar:
-                        db[table].insert_all(bar, pk=pks, replace=True)
+                        db[table].insert_all(bar, pk=pks, replace=True, columns=create_columns)
                 else:
-                    db[table].insert_all(rows, pk=pks, replace=True)
+                    db[table].insert_all(rows, pk=pks, replace=True, columns=create_columns)
         foreign_keys_to_add_final = []
         for table, column, other_table, other_column in foreign_keys_to_add:
             # Make sure both tables exist and are not skipped - they may not
